@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+.env
+ca-manager.sh
+app.py
+entrypoint.sh
+docker-compose.yml
+templates/
+requirements.txt

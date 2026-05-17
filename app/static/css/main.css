@@ -1,0 +1,101 @@
+/* ============================================================
+   CA Manager — Custom Styles
+   ============================================================ */
+
+body {
+  background-color: #f4f6f9;
+  font-size: .9rem;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+  width: 220px;
+  min-height: 100vh;
+  background: #1a1d23;
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+}
+
+.sidebar .brand {
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: .02em;
+}
+
+.sidebar .nav-link {
+  color: #9aa0ac;
+  border-radius: .375rem;
+  padding: .45rem .75rem;
+  transition: background .15s, color .15s;
+  font-size: .875rem;
+}
+
+.sidebar .nav-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .08);
+}
+
+.sidebar .nav-link.active {
+  color: #fff;
+  background: rgba(255, 255, 255, .14);
+}
+
+.sidebar .nav-link.link-danger:hover {
+  background: rgba(220, 53, 69, .18);
+  color: #f86c6b;
+}
+
+.sidebar .user-box {
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+/* ---- Cards ---- */
+.card {
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .08);
+}
+
+/* ---- PEM blocks ---- */
+pre.pem-block {
+  background: #1a1d23;
+  color: #98c379;
+  border-radius: .5rem;
+  padding: 1rem;
+  font-size: .775rem;
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+pre.info-block {
+  background: #1a1d23;
+  color: #abb2bf;
+  border-radius: .5rem;
+  padding: 1rem;
+  font-size: .775rem;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* ---- Settings table ---- */
+.settings-key {
+  font-family: monospace;
+  font-size: .8rem;
+  color: #6c757d;
+}
+
+/* ---- Misc ---- */
+.table > :not(caption) > * > * {
+  vertical-align: middle;
+}
+
+.badge {
+  font-weight: 500;
+}

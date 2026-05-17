@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}CA Certificate — CA Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h2 class="h3 fw-bold mb-0">
+    <i class="bi bi-patch-check me-2 text-primary"></i>Root CA Certificate
+  </h2>
+  <div class="d-flex gap-2">
+    {% if ca_pem %}
+    <a href="{{ url_for('ca.download_ca') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>rootCA.pem
+    </a>
+    <a href="{{ url_for('ca.download_crl') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-download me-1"></i>rootCA.crl
+    </a>
+    {% endif %}
+    {% if current_user.is_admin and not initialized %}
+    <a href="{{ url_for('ca.init') }}" class="btn btn-warning btn-sm">
+      <i class="bi bi-play-circle me-1"></i>Initialize CA
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if not initialized %}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  The Root CA has not been initialized yet.
+  {% if current_user.is_admin %}
+  <a href="{{ url_for('ca.init') }}" class="alert-link">Initialize now →</a>
+  {% endif %}
+</div>
+{% else %}
+
+<div class="alert alert-info d-flex align-items-start gap-2 mb-4">
+  <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+  <div>
+    Install <strong>rootCA.pem</strong> in your devices' trusted root store to prevent browser
+    security warnings for services using certificates issued by this CA.
+  </div>
+</div>
+
+{% if ca_pem %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <span class="fw-semibold small">
+      <i class="bi bi-file-earmark-text me-1"></i>rootCA.pem
+    </span>
+    <button class="btn btn-sm btn-outline-secondary" onclick="copyToClipboard('caPem', this)">
+      <i class="bi bi-clipboard me-1"></i>Copy
+    </button>
+  </div>
+  <div class="card-body p-0">
+    <pre class="pem-block rounded-0 rounded-bottom" id="caPem">{{ ca_pem }}</pre>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

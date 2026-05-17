@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}CA Manager{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/favicon.svg') }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+
+{% if current_user.is_authenticated %}
+<div class="d-flex" style="min-height:100vh">
+
+  <!-- Sidebar -->
+  <nav class="sidebar d-flex flex-column px-3 py-4">
+    <a href="{{ url_for('ca.dashboard') }}" class="brand mb-4 px-1 text-decoration-none">
+      <i class="bi bi-shield-lock me-2 text-primary"></i>CA Manager
+    </a>
+
+    <ul class="nav flex-column gap-1 flex-grow-1">
+      <li>
+        <a class="nav-link {% if request.blueprint == 'ca' and request.endpoint == 'ca.dashboard' %}active{% endif %}"
+           href="{{ url_for('ca.dashboard') }}">
+          <i class="bi bi-grid me-2"></i>Dashboard
+        </a>
+      </li>
+      {% if current_user.is_admin or current_user.is_operator %}
+      <li>
+        <a class="nav-link {% if request.endpoint == 'ca.issue' %}active{% endif %}"
+           href="{{ url_for('ca.issue') }}">
+          <i class="bi bi-plus-circle me-2"></i>Issue Certificate
+        </a>
+      </li>
+      {% endif %}
+      <li>
+        <a class="nav-link {% if request.endpoint == 'ca.show_ca' %}active{% endif %}"
+           href="{{ url_for('ca.show_ca') }}">
+          <i class="bi bi-patch-check me-2"></i>CA Certificate
+        </a>
+      </li>
+      {% if current_user.is_admin %}
+      <li>
+        <a class="nav-link {% if request.blueprint == 'users' %}active{% endif %}"
+           href="{{ url_for('users.list') }}">
+          <i class="bi bi-people me-2"></i>Users
+        </a>
+      </li>
+      <li>
+        <a class="nav-link {% if request.blueprint == 'settings' %}active{% endif %}"
+           href="{{ url_for('settings.index') }}">
+          <i class="bi bi-sliders me-2"></i>Settings
+        </a>
+      </li>
+      <li>
+        <a class="nav-link {% if request.endpoint == 'ca.audit_log' %}active{% endif %}"
+           href="{{ url_for('ca.audit_log') }}">
+          <i class="bi bi-journal-text me-2"></i>Audit Log
+        </a>
+      </li>
+      {% endif %}
+    </ul>
+
+    <div class="user-box pt-3 mt-2">
+      <div class="px-1 mb-2">
+        <small class="text-secondary d-block" style="font-size:.75rem">Logged in as</small>
+        <span class="text-white fw-semibold">{{ current_user.username }}</span>
+        {% if current_user.is_admin %}
+        <span class="badge bg-primary ms-1" style="font-size:.62rem">admin</span>
+        {% elif current_user.is_operator %}
+        <span class="badge bg-info text-dark ms-1" style="font-size:.62rem">operator</span>
+        {% else %}
+        <span class="badge bg-secondary ms-1" style="font-size:.62rem">viewer</span>
+        {% endif %}
+      </div>
+      <a class="nav-link {% if request.blueprint == 'account' %}active{% endif %}"
+         href="{{ url_for('account.index') }}">
+        <i class="bi bi-person-gear me-2"></i>My Account
+      </a>
+      <a class="nav-link link-danger" href="{{ url_for('auth.logout') }}">
+        <i class="bi bi-box-arrow-right me-2"></i>Logout
+      </a>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="flex-grow-1 py-4 px-4" style="min-width:0">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+{% else %}
+<!-- Unauthenticated: centered layout -->
+<div class="min-vh-100 d-flex align-items-center justify-content-center">
+  <div class="w-100" style="max-width:400px;padding:1.5rem">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+    {% block unauthenticated_content %}{% endblock %}
+  </div>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

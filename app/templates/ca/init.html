@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Initialize CA — CA Manager{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('ca.dashboard') }}" class="text-muted text-decoration-none small">
+    <i class="bi bi-arrow-left me-1"></i>Dashboard
+  </a>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card border-warning">
+      <div class="card-body p-4">
+        <h4 class="card-title mb-1">
+          <i class="bi bi-exclamation-triangle text-warning me-2"></i>Initialize Root CA
+        </h4>
+        <p class="text-muted small mb-4">One-time operation — generates the Root CA key and certificate.</p>
+
+        <ul class="list-unstyled mb-4 small">
+          <li class="mb-2"><i class="bi bi-key text-secondary me-2"></i>4096-bit RSA root key will be generated</li>
+          <li class="mb-2"><i class="bi bi-patch-check text-secondary me-2"></i>Self-signed root certificate ({{ days }} days) will be created</li>
+          <li class="mb-2"><i class="bi bi-list-check text-secondary me-2"></i>Initial empty CRL will be produced</li>
+          <li class="mb-2"><i class="bi bi-clock text-secondary me-2"></i>Key generation may take 5–15 seconds</li>
+        </ul>
+
+        <div class="alert alert-info py-2 small mb-4">
+          <i class="bi bi-info-circle me-1"></i>
+          Subject: <code>CN={{ org }} Root CA, O={{ org }}, L={{ locality }}, ST={{ state }}, C={{ country }}</code>
+          <br>
+          <a href="{{ url_for('settings.index') }}" class="alert-link">Change CA subject in Settings →</a>
+        </div>
+
+        <form method="post">
+          <button type="submit" class="btn btn-warning fw-semibold">
+            <i class="bi bi-play-circle me-1"></i>Initialize Root CA
+          </button>
+          <a href="{{ url_for('ca.dashboard') }}" class="btn btn-secondary ms-2">Cancel</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

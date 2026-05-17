@@ -1,0 +1,14 @@
+services:
+  ca-manager:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file: .env
+    volumes:
+      - ca_data:/opt/private-ca
+      - app_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  ca_data:
+  app_data:

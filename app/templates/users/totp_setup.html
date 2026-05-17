@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}Set up TOTP — {{ user.username }} — CA Manager{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="{{ url_for('users.list') }}" class="text-muted text-decoration-none small">
+    <i class="bi bi-arrow-left me-1"></i>Users
+  </a>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-body p-4">
+        <h4 class="card-title mb-1">
+          <i class="bi bi-shield-plus text-success me-2"></i>Set up TOTP
+        </h4>
+        <p class="text-muted small mb-4">
+          Authenticator app setup for <strong>{{ user.username }}</strong>.
+        </p>
+
+        {% if error %}
+        <div class="alert alert-danger py-2 small">{{ error }}</div>
+        {% endif %}
+
+        <p class="small mb-2">
+          <strong>Step 1.</strong> Scan the QR code with your authenticator app
+          (Google Authenticator, Aegis, Bitwarden, etc.).
+        </p>
+
+        <div class="text-center mb-3">
+          {{ qr_svg | safe }}
+        </div>
+
+        <details class="mb-3">
+          <summary class="text-muted small" style="cursor:pointer">
+            Can't scan? Enter the key manually
+          </summary>
+          <div class="mt-2 p-2 bg-light rounded">
+            <code class="user-select-all" style="word-break:break-all;font-size:.85rem">{{ secret }}</code>
+          </div>
+        </details>
+
+        <p class="small mb-3">
+          <strong>Step 2.</strong> Enter the 6-digit code shown in your app to confirm.
+        </p>
+
+        <form method="post">
+          <input type="hidden" name="secret" value="{{ secret }}">
+          <div class="mb-3">
+            <input type="text" name="code" class="form-control text-center"
+                   inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                   required autofocus autocomplete="one-time-code"
+                   placeholder="000000">
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success">
+              <i class="bi bi-shield-check me-1"></i>Enable TOTP
+            </button>
+            <a href="{{ url_for('users.list') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

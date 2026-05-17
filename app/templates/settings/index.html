@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}Settings — CA Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="h3 fw-bold mb-0">
+    <i class="bi bi-sliders me-2 text-primary"></i>Settings
+  </h2>
+</div>
+
+<div class="alert alert-info d-flex align-items-start gap-2 mb-4">
+  <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+  <div>
+    These settings are stored in the database and override the values in <code>.env</code>.
+    <br>
+    <strong>SECRET_KEY</strong> and <strong>CA_DIR</strong> can only be set in <code>.env</code>.
+    <br>
+    <small class="text-muted">
+      CA subject changes only affect <em>future</em> certificates — not the existing CA or issued certs.
+    </small>
+  </div>
+</div>
+
+{# Reset forms live outside the main form to avoid nesting #}
+{% for key in definitions %}
+<form id="reset-{{ key }}" method="post" action="{{ url_for('settings.reset', key=key) }}"></form>
+{% endfor %}
+
+<form method="post" id="settings-form">
+  <div class="card mb-4">
+    <div class="card-header fw-semibold py-2">
+      <i class="bi bi-person-badge me-1"></i>CA Subject Fields
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        {% for key in ['CA_COUNTRY', 'CA_STATE', 'CA_LOCALITY', 'CA_ORG', 'CA_OU'] %}
+        {% set label, default, help = definitions[key] %}
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">
+            {{ label }}
+            <span class="settings-key ms-1">{{ key }}</span>
+          </label>
+          <div class="input-group">
+            <input type="text" name="{{ key }}" class="form-control"
+                   value="{{ current_values[key] }}" placeholder="{{ default }}">
+            <button type="submit" form="reset-{{ key }}" class="btn btn-outline-secondary" title="Reset to default">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+          <div class="form-text">{{ help }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header fw-semibold py-2">
+      <i class="bi bi-calendar-check me-1"></i>Certificate Validity
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        {% for key in ['DAYS_VALID_CERT', 'DAYS_VALID_ROOT'] %}
+        {% set label, default, help = definitions[key] %}
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">
+            {{ label }}
+            <span class="settings-key ms-1">{{ key }}</span>
+          </label>
+          <div class="input-group">
+            <input type="number" name="{{ key }}" class="form-control" min="1" max="36500"
+                   value="{{ current_values[key] }}" placeholder="{{ default }}">
+            <span class="input-group-text">days</span>
+            <button type="submit" form="reset-{{ key }}" class="btn btn-outline-secondary" title="Reset to default">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+          <div class="form-text">{{ help }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-check-circle me-1"></i>Save Settings
+    </button>
+    <a href="{{ url_for('ca.dashboard') }}" class="btn btn-secondary">Cancel</a>
+  </div>
+</form>
+{% endblock %}

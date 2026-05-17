@@ -1,0 +1,233 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — CA Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0 fw-bold">
+    <i class="bi bi-grid me-2 text-primary"></i>Certificates
+  </h1>
+  {% if current_user.is_admin %}
+  <div class="d-flex gap-2">
+    {% if not initialized %}
+    <a href="{{ url_for('ca.init') }}" class="btn btn-warning btn-sm">
+      <i class="bi bi-exclamation-triangle me-1"></i>Initialize CA
+    </a>
+    {% else %}
+    <a href="{{ url_for('ca.issue') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i>Issue Certificate
+    </a>
+    {% endif %}
+  </div>
+  {% elif current_user.is_operator and initialized %}
+  <a href="{{ url_for('ca.issue') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-circle me-1"></i>Issue Certificate
+  </a>
+  {% endif %}
+</div>
+
+{% if not initialized %}
+<div class="alert alert-warning d-flex align-items-center gap-2">
+  <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+  <div>
+    <strong>CA not initialized.</strong>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('ca.init') }}" class="alert-link ms-1">Initialize now →</a>
+    {% else %}
+    Ask an administrator to initialize the CA.
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if certs %}
+<div class="mb-3">
+  <input type="text" id="certSearch" class="form-control form-control-sm"
+         placeholder="Search by domain or status…" oninput="filterCerts()">
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <table class="table table-hover mb-0" id="certTable">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-4">Domain</th>
+          <th>SANs</th>
+          <th>Status</th>
+          <th>Issued</th>
+          <th>Expires</th>
+          <th class="pe-4 text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cert in certs %}
+        {% set days_left = (cert.expires_at - now).days if cert.expires_at else 9999 %}
+        <tr data-domain="{{ cert.domain }}" data-status="{{ cert.status }}">
+          <td class="ps-4">
+            <i class="bi bi-globe2 me-2 text-muted"></i>
+            <span class="fw-semibold">{{ cert.domain }}</span>
+          </td>
+          <td class="text-muted small">
+            {% if cert.sans %}
+              {% set sans_list = cert.sans.split(',') %}
+              {% for san in sans_list[:2] %}
+                <span class="badge bg-light text-dark border me-1" style="font-size:.7rem">{{ san }}</span>
+              {% endfor %}
+              {% if sans_list|length > 2 %}
+                <span class="text-muted">+{{ sans_list|length - 2 }} more</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if cert.status == 'valid' %}
+              {% if days_left <= 30 %}
+              <span class="badge bg-warning text-dark">
+                <i class="bi bi-clock me-1"></i>Expiring soon
+              </span>
+              {% else %}
+              <span class="badge bg-success">
+                <i class="bi bi-check-circle me-1"></i>Valid
+              </span>
+              {% endif %}
+            {% else %}
+            <span class="badge bg-danger">
+              <i class="bi bi-x-circle me-1"></i>Revoked
+            </span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ cert.issued_at.strftime('%Y-%m-%d') }}</td>
+          <td class="text-muted small">
+            {% if cert.expires_at %}
+            {{ cert.expires_at.strftime('%Y-%m-%d') }}
+            {% if cert.status == 'valid' and days_left <= 30 %}
+            <span class="text-warning ms-1">({{ days_left }}d)</span>
+            {% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="pe-4 text-end">
+            <a href="{{ url_for('ca.cert_detail', domain=cert.domain) }}"
+               class="btn btn-sm btn-outline-primary me-1" title="View">
+              <i class="bi bi-eye"></i>
+            </a>
+            {% if current_user.can_issue and cert.status == 'valid' %}
+            <button type="button" class="btn btn-sm btn-outline-secondary me-1" title="Renew"
+                    data-bs-toggle="modal" data-bs-target="#renewModal"
+                    data-domain="{{ cert.domain }}">
+              <i class="bi bi-arrow-repeat"></i>
+            </button>
+            {% endif %}
+            {% if current_user.is_admin and cert.status == 'valid' %}
+            <button type="button" class="btn btn-sm btn-outline-danger" title="Revoke"
+                    data-bs-toggle="modal" data-bs-target="#revokeModal"
+                    data-domain="{{ cert.domain }}">
+              <i class="bi bi-x-octagon"></i>
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="text-muted small mt-2" id="certCount"></p>
+
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-inbox" style="font-size:3.5rem"></i>
+  <p class="lead mt-3 mb-1">No certificates yet</p>
+  {% if (current_user.is_admin or current_user.is_operator) and initialized %}
+  <a href="{{ url_for('ca.issue') }}" class="btn btn-primary mt-2">
+    <i class="bi bi-plus-circle me-1"></i>Issue your first certificate
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if current_user.can_issue %}
+<div class="modal fade" id="renewModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-arrow-repeat text-primary me-2"></i>Renew Certificate
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Renew the certificate for <strong id="renewTarget"></strong>?</p>
+        <p class="text-muted small mb-0">
+          A new key pair and certificate will be generated with the same SANs.
+          Replace existing copies on your services.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form id="renewForm" method="post">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-arrow-repeat me-1"></i>Renew
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if current_user.is_admin %}
+<div class="modal fade" id="revokeModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>Revoke Certificate
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Revoke the certificate for <strong id="revokeTarget"></strong>?</p>
+        <p class="text-muted small mb-0">This is irreversible. The CRL will be updated immediately.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form id="revokeForm" method="post">
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-x-octagon me-1"></i>Revoke
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('renewModal')?.addEventListener('show.bs.modal', function(e) {
+  const domain = e.relatedTarget.dataset.domain;
+  document.getElementById('renewTarget').textContent = domain;
+  document.getElementById('renewForm').action = '/cert/' + domain + '/renew';
+});
+
+document.getElementById('revokeModal')?.addEventListener('show.bs.modal', function(e) {
+  const domain = e.relatedTarget.dataset.domain;
+  document.getElementById('revokeTarget').textContent = domain;
+  document.getElementById('revokeForm').action = '/cert/' + domain + '/revoke';
+});
+
+function filterCerts() {
+  const q = document.getElementById('certSearch').value.toLowerCase();
+  const rows = document.querySelectorAll('#certTable tbody tr');
+  let visible = 0;
+  rows.forEach(row => {
+    const domain = row.dataset.domain || '';
+    const status = row.dataset.status || '';
+    const match = !q || domain.includes(q) || status.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  const countEl = document.getElementById('certCount');
+  if (countEl) countEl.textContent = q ? `${visible} of ${rows.length} certificates shown` : '';
+}
+</script>
+{% endblock %}

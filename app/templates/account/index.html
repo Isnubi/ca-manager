@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}My Account — CA Manager{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="h3 fw-bold mb-0">
+    <i class="bi bi-person-gear me-2 text-primary"></i>My Account
+  </h2>
+</div>
+
+<div class="row g-4">
+
+  <!-- Change password -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold py-2">
+        <i class="bi bi-key me-1"></i>Change Password
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('account.change_password') }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Current Password <span class="text-danger">*</span></label>
+            <input type="password" name="current_password" class="form-control" required
+                   autocomplete="current-password">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">New Password <span class="text-danger">*</span></label>
+            <input type="password" name="password" class="form-control" required
+                   autocomplete="new-password">
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Confirm New Password <span class="text-danger">*</span></label>
+            <input type="password" name="password2" class="form-control" required
+                   autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-circle me-1"></i>Update Password
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOTP -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header fw-semibold py-2">
+        <i class="bi bi-shield-lock me-1"></i>Two-Factor Authentication
+      </div>
+      <div class="card-body d-flex flex-column">
+        {% if current_user.totp_enabled %}
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="badge bg-success fs-6">
+            <i class="bi bi-shield-check me-1"></i>Enabled
+          </span>
+        </div>
+        <p class="text-muted small flex-grow-1">
+          TOTP is active on your account. You need your authenticator app at each login.
+        </p>
+        <form method="post" action="{{ url_for('account.totp_disable') }}">
+          <button type="submit" class="btn btn-outline-warning">
+            <i class="bi bi-shield-x me-1"></i>Disable TOTP
+          </button>
+        </form>
+        {% else %}
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="badge bg-secondary fs-6">
+            <i class="bi bi-shield me-1"></i>Not enabled
+          </span>
+        </div>
+        <p class="text-muted small flex-grow-1">
+          Add a one-time password (TOTP) to your account for extra security.
+          You will need an authenticator app such as Google Authenticator, Aegis, or Bitwarden.
+        </p>
+        <a href="{{ url_for('account.totp_setup') }}" class="btn btn-success">
+          <i class="bi bi-shield-plus me-1"></i>Set up TOTP
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
