@@ -165,5 +165,118 @@ def show_ca():
         click.echo(open(ca_utils.CA_CERT).read())
 
 
+@cli.command('import-ca')
+def import_ca():
+    """Import existing certificates from CA_DIR into the database.
+
+    Run this once after migrating from an external CA script.
+    Already-imported domains are skipped automatically.
+    """
+    import glob
+    import subprocess
+    from datetime import datetime
+
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Certificate
+        from app.blueprints.utils.ca_utils import (
+            CA_DIR, INDEX_FILE, parse_sans_from_cert_text,
+        )
+
+        # --- Build set of revoked serials from index.txt ---
+        revoked_serials = set()
+        if os.path.exists(INDEX_FILE):
+            with open(INDEX_FILE) as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if not parts or parts[0] not in ('R', 'r'):
+                        continue
+                    # Serial is the first all-hex token after the status flag
+                    for token in parts[1:]:
+                        if all(c in '0123456789ABCDEFabcdef' for c in token) and len(token) >= 4:
+                            revoked_serials.add(token.upper())
+                            break
+            if revoked_serials:
+                click.echo(f'Found {len(revoked_serials)} revoked serial(s) in index.txt')
+
+        # --- Scan for cert files ---
+        crt_files = sorted(glob.glob(os.path.join(CA_DIR, '*.crt')))
+        ca_basenames = {'rootCA.crt', 'rootCA.pem'}
+        imported = skipped = errors = 0
+
+        for crt_path in crt_files:
+            filename = os.path.basename(crt_path)
+            if filename in ca_basenames:
+                continue
+
+            domain = filename[:-4]  # strip .crt
+
+            if Certificate.query.filter_by(domain=domain).first():
+                click.echo(f'  skip   {domain}  (already in database)')
+                skipped += 1
+                continue
+
+            # Read cert metadata with openssl
+            r = subprocess.run(
+                ['openssl', 'x509', '-in', crt_path, '-noout',
+                 '-serial', '-startdate', '-enddate'],
+                capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                click.secho(f'  error  {domain}: {r.stderr.strip()}', fg='red')
+                errors += 1
+                continue
+
+            info = {}
+            for line in r.stdout.strip().splitlines():
+                k, _, v = line.partition('=')
+                info[k.strip()] = v.strip()
+
+            serial = info.get('serial', '').upper()
+
+            # Parse dates — openssl format: "Jan  1 00:00:00 2025 GMT"
+            def _parse_date(s):
+                for fmt in ('%b %d %H:%M:%S %Y %Z', '%b  %d %H:%M:%S %Y %Z'):
+                    try:
+                        return datetime.strptime(s.strip(), fmt)
+                    except ValueError:
+                        pass
+                return None
+
+            issued_at = _parse_date(info.get('notBefore', '')) or datetime.utcnow()
+            expires_at = _parse_date(info.get('notAfter', ''))
+
+            # Determine status
+            status = 'revoked' if serial in revoked_serials else 'valid'
+
+            # Read SANs
+            r2 = subprocess.run(
+                ['openssl', 'x509', '-in', crt_path, '-noout', '-text'],
+                capture_output=True, text=True,
+            )
+            sans_list = parse_sans_from_cert_text(r2.stdout) if r2.returncode == 0 else []
+
+            cert = Certificate(
+                domain=domain,
+                serial=serial,
+                status=status,
+                issued_at=issued_at,
+                expires_at=expires_at,
+                sans=','.join(sans_list) if sans_list else None,
+            )
+            if status == 'revoked':
+                cert.revoked_at = datetime.utcnow()
+
+            db.session.add(cert)
+            status_label = click.style('revoked', fg='yellow') if status == 'revoked' else click.style('valid', fg='green')
+            click.echo(f'  import {domain}  serial={serial[:12]}...  [{status_label}]')
+            imported += 1
+
+        db.session.commit()
+        click.echo('')
+        click.secho(f'Done: {imported} imported, {skipped} skipped, {errors} errors.', fg='green')
+
+
 if __name__ == '__main__':
     cli()
