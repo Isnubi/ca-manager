@@ -72,6 +72,18 @@ Two Docker volumes are used:
 
 Back these up regularly. The CA private key (`rootCA.key`) is the most sensitive file — treat it accordingly.
 
+## Migrating from a script-managed CA
+
+If you previously managed your CA with `ca-manager.sh` and want to move to this Docker application, see **[MIGRATION.md](MIGRATION.md)** for the full step-by-step guide.
+
+The short version: archive your `/opt/private-ca` directory, inject it into the Docker volume, then run `python cli.py import-ca` — no certificates need to be reissued and clients do not need to re-import the Root CA.
+
+## REST API
+
+CA Manager exposes a JSON API at `/api/`. Authenticate every request with an `X-API-Key` header. Keys are generated per-user in **My Account → API Keys**.
+
+See **[API.md](API.md)** for the full endpoint reference.
+
 ## Development
 
 ```bash

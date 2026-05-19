@@ -114,6 +114,14 @@
   {% endif %}
 </div>
 
+<!-- Notes -->
+{% if cert.notes %}
+<div class="alert alert-secondary d-flex gap-2 align-items-start py-2 mb-3">
+  <i class="bi bi-sticky flex-shrink-0 mt-1"></i>
+  <div class="small">{{ cert.notes }}</div>
+</div>
+{% endif %}
+
 <!-- SANs -->
 {% if sans_list %}
 <div class="card mb-3">
@@ -180,6 +188,45 @@
     <div class="card-body p-0">
       <pre class="pem-block rounded-0 rounded-bottom" id="keyPem">{{ key_pem }}</pre>
     </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Issuance history -->
+{% if history %}
+<div class="card mb-3">
+  <div class="card-header py-2">
+    <span class="fw-semibold small">
+      <i class="bi bi-clock-history me-1"></i>Issuance History
+    </span>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead class="table-light">
+        <tr>
+          <th class="ps-3">Serial</th>
+          <th>Issued</th>
+          <th>Expired / Replaced</th>
+          <th class="pe-3">Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in history %}
+        <tr>
+          <td class="ps-3"><code class="small">{{ h.serial[:16] }}…</code></td>
+          <td class="text-muted small">{{ h.issued_at.strftime('%Y-%m-%d') }}</td>
+          <td class="text-muted small">{{ h.expires_at.strftime('%Y-%m-%d') if h.expires_at else '—' }}</td>
+          <td class="pe-3">
+            {% if h.action == 'renewed' %}
+            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">renewed</span>
+            {% else %}
+            <span class="badge bg-secondary bg-opacity-10 text-secondary border">{{ h.action }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endif %}

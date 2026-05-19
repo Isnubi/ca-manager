@@ -39,6 +39,48 @@
 </div>
 {% endif %}
 
+<!-- Stats cards -->
+{% if certs %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-primary">{{ stats.total }}</div>
+        <div class="text-muted small">Total</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold text-success">{{ stats.valid }}</div>
+        <div class="text-muted small">Valid</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100 {% if stats.expiring > 0 %}border-warning{% endif %}">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold {% if stats.expiring > 0 %}text-warning{% else %}text-muted{% endif %}">
+          {{ stats.expiring }}
+        </div>
+        <div class="text-muted small">Expiring ≤{{ expiry_threshold }}d</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100 {% if stats.revoked > 0 %}border-danger border-opacity-25{% endif %}">
+      <div class="card-body py-3">
+        <div class="fs-2 fw-bold {% if stats.revoked > 0 %}text-danger{% else %}text-muted{% endif %}">
+          {{ stats.revoked }}
+        </div>
+        <div class="text-muted small">Revoked</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if certs %}
 <div class="mb-3">
   <input type="text" id="certSearch" class="form-control form-control-sm"
@@ -61,7 +103,7 @@
       <tbody>
         {% for cert in certs %}
         {% set days_left = (cert.expires_at - now).days if cert.expires_at else 9999 %}
-        <tr data-domain="{{ cert.domain }}" data-status="{{ cert.status }}">
+        <tr data-domain="{{ cert.domain }}" data-status="{{ cert.status }}" data-sans="{{ cert.sans or '' }}">
           <td class="ps-4">
             <i class="bi bi-globe2 me-2 text-muted"></i>
             <span class="fw-semibold">{{ cert.domain }}</span>
@@ -79,7 +121,7 @@
           </td>
           <td>
             {% if cert.status == 'valid' %}
-              {% if days_left <= 30 %}
+              {% if days_left <= expiry_threshold %}
               <span class="badge bg-warning text-dark">
                 <i class="bi bi-clock me-1"></i>Expiring soon
               </span>
@@ -98,7 +140,7 @@
           <td class="text-muted small">
             {% if cert.expires_at %}
             {{ cert.expires_at.strftime('%Y-%m-%d') }}
-            {% if cert.status == 'valid' and days_left <= 30 %}
+            {% if cert.status == 'valid' and days_left <= expiry_threshold %}
             <span class="text-warning ms-1">({{ days_left }}d)</span>
             {% endif %}
             {% else %}—{% endif %}
@@ -222,7 +264,8 @@ function filterCerts() {
   rows.forEach(row => {
     const domain = row.dataset.domain || '';
     const status = row.dataset.status || '';
-    const match = !q || domain.includes(q) || status.includes(q);
+    const sans = row.dataset.sans || '';
+    const match = !q || domain.includes(q) || status.includes(q) || sans.includes(q);
     row.style.display = match ? '' : 'none';
     if (match) visible++;
   });

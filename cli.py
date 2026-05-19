@@ -278,5 +278,26 @@ def import_ca():
         click.secho(f'Done: {imported} imported, {skipped} skipped, {errors} errors.', fg='green')
 
 
+@cli.command('send-expiry-digest')
+def send_expiry_digest():
+    """Send an email digest of certificates expiring within EXPIRY_WARN_DAYS.
+
+    Configure SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
+    SMTP_VERIFY_SSL, and ALERT_EMAIL in the Settings page before running.
+    """
+    app = get_app()
+    with app.app_context():
+        from app.blueprints.utils.mailer import send_expiry_digest as _send
+        try:
+            sent, msg = _send()
+            if sent:
+                click.secho(msg, fg='green')
+            else:
+                click.echo(msg)
+        except Exception as e:
+            click.echo(f'Error sending email: {e}', err=True)
+            sys.exit(1)
+
+
 if __name__ == '__main__':
     cli()

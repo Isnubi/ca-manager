@@ -45,12 +45,14 @@ def create_app():
     from app.blueprints.users import users_bp
     from app.blueprints.settings import settings_bp
     from app.blueprints.account import account_bp
+    from app.blueprints.api import api_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(ca_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(account_bp)
+    app.register_blueprint(api_bp)
 
     with app.app_context():
         db.create_all()
@@ -59,12 +61,17 @@ def create_app():
             for stmt in [
                 'ALTER TABLE user ADD COLUMN totp_secret VARCHAR(32)',
                 'ALTER TABLE user ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT 0',
+                'ALTER TABLE user ADD COLUMN last_login_at DATETIME',
                 'ALTER TABLE certificate ADD COLUMN sans VARCHAR(1000)',
+                'ALTER TABLE certificate ADD COLUMN notes VARCHAR(500)',
             ]:
                 try:
                     conn.execute(db.text(stmt))
                     conn.commit()
                 except Exception:
                     pass
+
+    from app.scheduler import init_scheduler
+    init_scheduler(app)
 
     return app

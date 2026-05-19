@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, render_template, redirect, url_for, request, flash, send_file, abort, Response
 from flask_login import login_required, current_user
 from app import db
-from app.models import Certificate, AuditLog, get_setting
+from app.models import Certificate, CertificateHistory, AuditLog, get_setting
 from app.blueprints.utils.ca_utils import (
     CA_DIR, CA_CERT, CRL_FILE,
     ca_initialized, regen_crl, init_ca, issue_cert, cert_text,
@@ -35,10 +35,24 @@ def index():
 @login_required
 def dashboard():
     certs = Certificate.query.order_by(Certificate.issued_at.desc()).all()
+    now = datetime.utcnow()
+    expiry_threshold = int(get_setting('EXPIRY_WARN_DAYS') or 30)
+    stats = {
+        'total': len(certs),
+        'valid': sum(1 for c in certs if c.status == 'valid'),
+        'revoked': sum(1 for c in certs if c.status == 'revoked'),
+        'expiring': sum(
+            1 for c in certs
+            if c.status == 'valid' and c.expires_at
+            and 0 <= (c.expires_at - now).days <= expiry_threshold
+        ),
+    }
     return render_template('ca/dashboard.html',
                            certs=certs,
                            initialized=ca_initialized(),
-                           now=datetime.utcnow())
+                           now=now,
+                           stats=stats,
+                           expiry_threshold=expiry_threshold)
 
 
 @ca_bp.route('/init', methods=['GET', 'POST'])
@@ -88,6 +102,7 @@ def issue():
     if request.method == 'POST':
         domain = request.form.get('domain', '').strip().lower()
         extra_raw = request.form.get('extra_sans', '').strip()
+        notes = request.form.get('notes', '').strip() or None
 
         if not domain:
             flash('Domain is required.', 'danger')
@@ -121,7 +136,14 @@ def issue():
 
             now = datetime.utcnow()
             if existing:
-                # Re-issuing a revoked cert: update record in place
+                # Save history of the revoked cert being replaced
+                db.session.add(CertificateHistory(
+                    domain=domain,
+                    serial=existing.serial,
+                    issued_at=existing.issued_at,
+                    expires_at=existing.expires_at,
+                    action='reissued',
+                ))
                 existing.serial = serial
                 existing.status = 'valid'
                 existing.issued_at = now
@@ -129,6 +151,7 @@ def issue():
                 existing.revoked_at = None
                 existing.issued_by_id = current_user.id
                 existing.sans = ','.join(sans)
+                existing.notes = notes
             else:
                 cert = Certificate(
                     domain=domain,
@@ -138,6 +161,7 @@ def issue():
                     expires_at=now + timedelta(days=days),
                     issued_by_id=current_user.id,
                     sans=','.join(sans),
+                    notes=notes,
                 )
                 db.session.add(cert)
 
@@ -167,6 +191,8 @@ def renew(domain):
             sans = parse_sans_from_cert_text(ossl) or [_san_entry(domain)]
 
         old_serial = cert.serial
+        old_issued_at = cert.issued_at
+        old_expires_at = cert.expires_at
         days = int(get_setting('DAYS_VALID_CERT'))
         serial = issue_cert(
             domain=domain,
@@ -178,6 +204,14 @@ def renew(domain):
             subj_ou=get_setting('CA_OU'),
             days_valid_cert=days,
         )
+
+        db.session.add(CertificateHistory(
+            domain=domain,
+            serial=old_serial,
+            issued_at=old_issued_at,
+            expires_at=old_expires_at,
+            action='renewed',
+        ))
 
         now = datetime.utcnow()
         cert.serial = serial
@@ -217,12 +251,18 @@ def cert_detail(domain):
     else:
         sans_list = parse_sans_from_cert_text(ossl_text) if ossl_text else []
 
+    history = (CertificateHistory.query
+               .filter_by(domain=domain)
+               .order_by(CertificateHistory.issued_at.desc())
+               .all())
+
     return render_template('ca/cert_detail.html',
                            cert=cert,
                            cert_pem=cert_pem,
                            key_pem=key_pem,
                            cert_text=ossl_text,
                            sans_list=sans_list,
+                           history=history,
                            now=datetime.utcnow())
 
 

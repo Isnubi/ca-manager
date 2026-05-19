@@ -1,4 +1,6 @@
+import hashlib
 import os
+import secrets
 from datetime import datetime
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -13,6 +15,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     totp_secret = db.Column(db.String(32), nullable=True)
     totp_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    last_login_at = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -44,6 +47,37 @@ class Certificate(db.Model):
     issued_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     issued_by = db.relationship('User', backref='certificates')
     sans = db.Column(db.String(1000), nullable=True)
+    notes = db.Column(db.String(500), nullable=True)
+
+
+class CertificateHistory(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    domain = db.Column(db.String(255), nullable=False, index=True)
+    serial = db.Column(db.String(40), nullable=False)
+    issued_at = db.Column(db.DateTime, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    action = db.Column(db.String(20), nullable=False)
+
+
+class ApiKey(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    owner = db.relationship('User', backref='api_keys')
+    name = db.Column(db.String(100), nullable=False)
+    key_hash = db.Column(db.String(64), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    @staticmethod
+    def generate():
+        raw = secrets.token_hex(32)
+        key_hash = hashlib.sha256(raw.encode()).hexdigest()
+        return raw, key_hash
+
+    @staticmethod
+    def lookup(raw_key):
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        return ApiKey.query.filter_by(key_hash=key_hash).first()
 
 
 class AuditLog(db.Model):
@@ -91,6 +125,38 @@ SETTING_DEFINITIONS = {
         'Root CA Validity (days)', '3650',
         'Validity period for the Root CA certificate (10 years = 3650). '
         'Only applies on next CA initialization.'
+    ),
+    'EXPIRY_WARN_DAYS': (
+        'Expiry Warning (days)', '30',
+        'Certificates expiring within this many days are flagged on the dashboard and included in email digests.'
+    ),
+    'SMTP_HOST': (
+        'SMTP Host', '',
+        'Hostname of the SMTP server for expiry alert emails (e.g. mail.home.local).'
+    ),
+    'SMTP_PORT': (
+        'SMTP Port', '587',
+        'SMTP port: 587 = STARTTLS, 465 = SSL/TLS, 25 = plain.'
+    ),
+    'SMTP_USER': (
+        'SMTP Username', '',
+        'Leave blank if the server requires no authentication.'
+    ),
+    'SMTP_PASSWORD': (
+        'SMTP Password', '',
+        'Leave blank if the server requires no authentication. Stored in the database.'
+    ),
+    'SMTP_VERIFY_SSL': (
+        'Verify SSL Certificate', 'true',
+        'Verify the SMTP server\'s SSL/TLS certificate. Set to "false" for self-signed certs.'
+    ),
+    'SMTP_FROM': (
+        'From Address', '',
+        'Sender email address (e.g. ca-manager@home.local).'
+    ),
+    'ALERT_EMAIL': (
+        'Alert Recipient', '',
+        'Email address to receive daily expiry digest emails.'
     ),
 }
 

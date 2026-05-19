@@ -60,7 +60,7 @@
     </div>
     <div class="card-body">
       <div class="row g-3">
-        {% for key in ['DAYS_VALID_CERT', 'DAYS_VALID_ROOT'] %}
+        {% for key in ['DAYS_VALID_CERT', 'DAYS_VALID_ROOT', 'EXPIRY_WARN_DAYS'] %}
         {% set label, default, help = definitions[key] %}
         <div class="col-md-6">
           <label class="form-label fw-semibold">
@@ -78,6 +78,90 @@
           <div class="form-text">{{ help }}</div>
         </div>
         {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-header fw-semibold py-2">
+      <i class="bi bi-envelope me-1"></i>Email Alerts (Expiry Digest)
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info d-flex gap-2 align-items-start py-2 mb-3">
+        <i class="bi bi-info-circle-fill flex-shrink-0 mt-1"></i>
+        <div class="small">
+          Run <code>docker compose exec ca-manager python cli.py send-expiry-digest</code> manually
+          or via a cron job to send the daily digest. Passwords are stored in the database.
+        </div>
+      </div>
+      <div class="row g-3">
+        {% for key in ['SMTP_HOST', 'SMTP_USER', 'SMTP_FROM', 'ALERT_EMAIL'] %}
+        {% set label, default, help = definitions[key] %}
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">
+            {{ label }}
+            <span class="settings-key ms-1">{{ key }}</span>
+          </label>
+          <div class="input-group">
+            <input type="text" name="{{ key }}" class="form-control"
+                   value="{{ current_values[key] }}" placeholder="{{ default or label }}">
+            <button type="submit" form="reset-{{ key }}" class="btn btn-outline-secondary" title="Reset to default">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+          <div class="form-text">{{ help }}</div>
+        </div>
+        {% endfor %}
+        {# SMTP_PORT — number input #}
+        {% set label, default, help = definitions['SMTP_PORT'] %}
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">
+            {{ label }}
+            <span class="settings-key ms-1">SMTP_PORT</span>
+          </label>
+          <div class="input-group">
+            <input type="number" name="SMTP_PORT" class="form-control" min="1" max="65535"
+                   value="{{ current_values['SMTP_PORT'] }}" placeholder="{{ default }}">
+            <button type="submit" form="reset-SMTP_PORT" class="btn btn-outline-secondary" title="Reset to default">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+          <div class="form-text">{{ help }}</div>
+        </div>
+        {# SMTP_PASSWORD — password input #}
+        {% set label, default, help = definitions['SMTP_PASSWORD'] %}
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">
+            {{ label }}
+            <span class="settings-key ms-1">SMTP_PASSWORD</span>
+          </label>
+          <div class="input-group">
+            <input type="password" name="SMTP_PASSWORD" class="form-control"
+                   value="{{ current_values['SMTP_PASSWORD'] }}" autocomplete="new-password">
+            <button type="submit" form="reset-SMTP_PASSWORD" class="btn btn-outline-secondary" title="Reset to default">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+          <div class="form-text">{{ help }}</div>
+        </div>
+        {# SMTP_VERIFY_SSL — select #}
+        {% set label, default, help = definitions['SMTP_VERIFY_SSL'] %}
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">
+            {{ label }}
+            <span class="settings-key ms-1">SMTP_VERIFY_SSL</span>
+          </label>
+          <div class="input-group">
+            <select name="SMTP_VERIFY_SSL" class="form-select">
+              <option value="true" {% if current_values['SMTP_VERIFY_SSL'] != 'false' %}selected{% endif %}>Yes (recommended)</option>
+              <option value="false" {% if current_values['SMTP_VERIFY_SSL'] == 'false' %}selected{% endif %}>No (skip verification)</option>
+            </select>
+            <button type="submit" form="reset-SMTP_VERIFY_SSL" class="btn btn-outline-secondary" title="Reset to default">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+          <div class="form-text">{{ help }}</div>
+        </div>
       </div>
     </div>
   </div>

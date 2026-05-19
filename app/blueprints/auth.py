@@ -1,4 +1,5 @@
 import pyotp
+from datetime import datetime
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 from app import db
@@ -49,6 +50,8 @@ def login():
             if user.totp_enabled:
                 session['_totp_user_id'] = user.id
                 return redirect(url_for('auth.totp_verify'))
+            user.last_login_at = datetime.utcnow()
+            db.session.commit()
             login_user(user, remember=True)
             return redirect(request.args.get('next') or url_for('ca.dashboard'))
         error = 'Invalid username or password.'
@@ -71,6 +74,8 @@ def totp_verify():
         code = request.form.get('code', '').strip()
         if pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
             session.pop('_totp_user_id', None)
+            user.last_login_at = datetime.utcnow()
+            db.session.commit()
             login_user(user, remember=True)
             return redirect(url_for('ca.dashboard'))
         error = 'Invalid code. Please try again.'

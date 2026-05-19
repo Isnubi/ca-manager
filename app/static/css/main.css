@@ -10,11 +10,20 @@ body {
 /* ---- Sidebar ---- */
 .sidebar {
   width: 220px;
-  min-height: 100vh;
+  height: 100vh;
   background: #1a1d23;
   position: sticky;
   top: 0;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Nav links scroll independently so user-box stays pinned to bottom */
+.sidebar .nav.flex-column {
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.15) transparent;
 }
 
 .sidebar .brand {

@@ -2,9 +2,10 @@ import io
 import pyotp
 import qrcode
 import qrcode.image.svg
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_required, current_user
 from app import db
+from app.models import ApiKey
 from app.blueprints.utils.utils import log_action
 
 account_bp = Blueprint('account', __name__, url_prefix='/account')
@@ -13,7 +14,41 @@ account_bp = Blueprint('account', __name__, url_prefix='/account')
 @account_bp.route('/')
 @login_required
 def index():
-    return render_template('account/index.html')
+    api_keys = ApiKey.query.filter_by(user_id=current_user.id).order_by(ApiKey.created_at.desc()).all()
+    new_key = session.pop('new_api_key', None)
+    new_key_name = session.pop('new_api_key_name', None)
+    return render_template('account/index.html',
+                           api_keys=api_keys,
+                           new_key=new_key,
+                           new_key_name=new_key_name)
+
+
+@account_bp.route('/api-keys/create', methods=['POST'])
+@login_required
+def create_api_key():
+    name = request.form.get('name', '').strip()
+    if not name:
+        flash('Key name is required.', 'danger')
+        return redirect(url_for('account.index'))
+    raw, key_hash = ApiKey.generate()
+    key = ApiKey(user_id=current_user.id, name=name, key_hash=key_hash)
+    db.session.add(key)
+    log_action('api_key_create', target=name)
+    db.session.commit()
+    session['new_api_key'] = raw
+    session['new_api_key_name'] = name
+    return redirect(url_for('account.index'))
+
+
+@account_bp.route('/api-keys/<int:key_id>/delete', methods=['POST'])
+@login_required
+def delete_api_key(key_id):
+    key = ApiKey.query.filter_by(id=key_id, user_id=current_user.id).first_or_404()
+    log_action('api_key_delete', target=key.name)
+    db.session.delete(key)
+    db.session.commit()
+    flash(f'API key "{key.name}" deleted.', 'success')
+    return redirect(url_for('account.index'))
 
 
 @account_bp.route('/change-password', methods=['POST'])
