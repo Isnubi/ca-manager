@@ -163,6 +163,15 @@
           <div class="form-text">{{ help }}</div>
         </div>
       </div>
+      <div class="mt-3">
+        <button type="submit" formaction="{{ url_for('settings.test_email') }}" formnovalidate
+                class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-envelope-paper me-1"></i>Send Test Email
+        </button>
+        <span class="form-text d-inline-block ms-1">
+          Uses the values above (even if unsaved) and sends to the Alert Recipient.
+        </span>
+      </div>
     </div>
   </div>
 

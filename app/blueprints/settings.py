@@ -3,8 +3,14 @@ from flask_login import login_required
 from app import db
 from app.models import Setting, SETTING_DEFINITIONS, get_setting
 from app.blueprints.utils.utils import admin_required, log_action
+from app.blueprints.utils.mailer import send_test_email
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
+
+SMTP_KEYS = [
+    'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD',
+    'SMTP_FROM', 'SMTP_VERIFY_SSL', 'ALERT_EMAIL',
+]
 
 
 @settings_bp.route('/', methods=['GET', 'POST'])
@@ -35,6 +41,21 @@ def index():
     return render_template('settings/index.html',
                            definitions=SETTING_DEFINITIONS,
                            current_values=current_values)
+
+
+@settings_bp.route('/test-email', methods=['POST'])
+@login_required
+@admin_required
+def test_email():
+    overrides = {key: request.form.get(key, '').strip() for key in SMTP_KEYS}
+    try:
+        sent, message = send_test_email(overrides)
+        flash(message, 'success' if sent else 'warning')
+    except Exception as e:
+        flash(f'Failed to send test email: {e}', 'danger')
+    log_action('settings_test_email', detail=overrides.get('ALERT_EMAIL') or None)
+    db.session.commit()
+    return redirect(url_for('settings.index'))
 
 
 @settings_bp.route('/reset/<key>', methods=['POST'])
