@@ -1,4 +1,3 @@
-import ipaddress
 import os
 from datetime import datetime, timedelta
 from functools import wraps
@@ -6,18 +5,21 @@ from flask import Blueprint, request, jsonify, g, send_file, Response
 from app import db
 from app.models import ApiKey, Certificate, CertificateHistory, AuditLog, get_setting
 from app.blueprints.utils.ca_utils import (
-    CA_DIR, CA_CERT, ca_initialized, issue_cert, regen_crl, parse_sans_from_cert_text,
+    CA_CERT, InvalidNameError, ca_initialized, issue_cert, regen_crl,
+    build_sans, validate_domain, cert_path,
 )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 
-def _san_entry(value):
+def _known_cert_path(domain, ext):
+    """Return the file path for a certificate known to the database, else None."""
+    if not Certificate.query.filter_by(domain=domain).first():
+        return None
     try:
-        ipaddress.ip_address(value)
-        return f'IP:{value}'
-    except ValueError:
-        return f'DNS:{value}'
+        return cert_path(domain, ext)
+    except InvalidNameError:
+        return None
 
 
 def require_api_key(f):
@@ -81,25 +83,25 @@ def issue():
     if not ca_initialized():
         return jsonify({'error': 'CA not initialized'}), 409
 
-    data = request.get_json(silent=True) or {}
-    domain = (data.get('domain') or '').strip().lower()
-    if not domain:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    if not data.get('domain'):
         return jsonify({'error': 'domain is required'}), 400
+    extra_sans = data.get('sans') or []
+    if not isinstance(extra_sans, list):
+        return jsonify({'error': 'sans must be a list'}), 400
+    try:
+        domain = validate_domain(data.get('domain'))
+        sans = build_sans(domain, extra_sans)
+    except InvalidNameError as e:
+        return jsonify({'error': str(e)}), 400
 
-    extra_sans = data.get('sans', [])
-    notes = (data.get('notes') or '').strip() or None
+    notes = str(data.get('notes') or '').strip()[:500] or None
 
     existing = Certificate.query.filter_by(domain=domain).first()
     if existing and existing.status == 'valid':
         return jsonify({'error': f'A valid certificate for {domain} already exists'}), 409
-
-    sans = [_san_entry(domain)]
-    for s in extra_sans:
-        s = str(s).strip()
-        if s:
-            entry = _san_entry(s)
-            if entry not in sans:
-                sans.append(entry)
 
     try:
         days = int(get_setting('DAYS_VALID_CERT'))
@@ -120,6 +122,7 @@ def issue():
         db.session.add(CertificateHistory(
             domain=domain, serial=existing.serial,
             issued_at=existing.issued_at, expires_at=existing.expires_at,
+            revoked_at=existing.revoked_at if existing.status == 'revoked' else None,
             action='reissued',
         ))
         existing.serial = serial
@@ -140,6 +143,8 @@ def issue():
 
     _log('cert_issue', target=domain, detail=f'via API; {",".join(sans)}')
     db.session.commit()
+    if existing:
+        regen_crl()
 
     cert = Certificate.query.filter_by(domain=domain).first()
     return jsonify(_cert_json(cert)), 201
@@ -157,15 +162,15 @@ def revoke(domain):
     cert.revoked_at = datetime.utcnow()
     _log('cert_revoke', target=domain, detail='via API')
     db.session.commit()
-    regen_crl(Certificate.query.all())
+    regen_crl()
     return jsonify({'status': 'revoked', 'domain': domain})
 
 
 @api_bp.route('/cert/<domain>/cert.pem')
 @require_api_key
 def download_cert(domain):
-    path = os.path.join(CA_DIR, f'{domain}.crt')
-    if not os.path.exists(path):
+    path = _known_cert_path(domain, 'crt')
+    if not path or not os.path.exists(path):
         return jsonify({'error': 'Certificate file not found'}), 404
     return send_file(path, as_attachment=True, download_name=f'{domain}.crt',
                      mimetype='application/x-pem-file')
@@ -174,8 +179,8 @@ def download_cert(domain):
 @api_bp.route('/cert/<domain>/chain.pem')
 @require_api_key
 def download_chain(domain):
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
-    if not os.path.exists(crt_path) or not os.path.exists(CA_CERT):
+    crt_path = _known_cert_path(domain, 'crt')
+    if not crt_path or not os.path.exists(crt_path) or not os.path.exists(CA_CERT):
         return jsonify({'error': 'Certificate or CA file not found'}), 404
     chain = open(crt_path).read() + open(CA_CERT).read()
     return Response(

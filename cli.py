@@ -61,11 +61,18 @@ def issue(domain, san):
             click.echo('Error: CA is not initialized. Run: python cli.py init', err=True)
             sys.exit(1)
 
-        if Certificate.query.filter_by(domain=domain, status='valid').first():
-            click.echo(f'Error: A valid certificate for {domain} already exists.', err=True)
+        try:
+            domain = ca_utils.validate_domain(domain)
+            sans = ca_utils.build_sans(domain, san)
+        except ca_utils.InvalidNameError as e:
+            click.echo(f'Error: {e}', err=True)
             sys.exit(1)
 
-        sans = [f'DNS:{domain}'] + [f'DNS:{s}' for s in san if f'DNS:{s}' != f'DNS:{domain}']
+        if Certificate.query.filter_by(domain=domain).first():
+            click.echo(f'Error: A certificate for {domain} already exists '
+                       '(use the web UI to renew or reissue it).', err=True)
+            sys.exit(1)
+
         days = int(get_setting('DAYS_VALID_CERT'))
 
         click.echo(f'Issuing certificate for {domain}…')
@@ -83,6 +90,7 @@ def issue(domain, san):
                 domain=domain, serial=serial, status='valid',
                 issued_at=datetime.utcnow(),
                 expires_at=datetime.utcnow() + timedelta(days=days),
+                sans=','.join(sans),
             )
             db.session.add(cert)
             db.session.commit()
@@ -149,7 +157,7 @@ def revoke(domain):
         cert.status = 'revoked'
         cert.revoked_at = datetime.utcnow()
         db.session.commit()
-        ca_utils.regen_crl(Certificate.query.all())
+        ca_utils.regen_crl()
         click.secho(f'Certificate for {domain} revoked.', fg='yellow')
 
 

@@ -31,7 +31,7 @@
           <a href="{{ url_for('settings.index') }}" class="alert-link">Change CA subject in Settings →</a>
         </div>
 
-        <form method="post">
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-warning fw-semibold">
             <i class="bi bi-play-circle me-1"></i>Initialize Root CA
           </button>

@@ -38,9 +38,13 @@ def index():
         return redirect(url_for('settings.index'))
 
     current_values = {key: get_setting(key) for key in SETTING_DEFINITIONS}
+    # Never send the stored SMTP password back to the browser.
+    password_set = bool(current_values.get('SMTP_PASSWORD'))
+    current_values['SMTP_PASSWORD'] = ''
     return render_template('settings/index.html',
                            definitions=SETTING_DEFINITIONS,
-                           current_values=current_values)
+                           current_values=current_values,
+                           smtp_password_set=password_set)
 
 
 @settings_bp.route('/test-email', methods=['POST'])
@@ -53,7 +57,7 @@ def test_email():
         flash(message, 'success' if sent else 'warning')
     except Exception as e:
         flash(f'Failed to send test email: {e}', 'danger')
-    log_action('settings_test_email', detail=overrides.get('ALERT_EMAIL') or None)
+    log_action('settings_test_email', detail=(overrides.get('ALERT_EMAIL') or '')[:200] or None)
     db.session.commit()
     return redirect(url_for('settings.index'))
 

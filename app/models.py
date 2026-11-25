@@ -1,7 +1,7 @@
 import hashlib
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import db
@@ -16,12 +16,46 @@ class User(UserMixin, db.Model):
     totp_secret = db.Column(db.String(32), nullable=True)
     totp_enabled = db.Column(db.Boolean, nullable=False, default=False)
     last_login_at = db.Column(db.DateTime, nullable=True)
+    # Identifier stored in the session and remember-me cookie. Rotating it
+    # invalidates every existing session of the user.
+    session_token = db.Column(db.String(64), unique=True, nullable=True,
+                              default=lambda: secrets.token_hex(32))
+    failed_login_count = db.Column(db.Integer, nullable=False, default=0)
+    locked_until = db.Column(db.DateTime, nullable=True)
+    totp_last_step = db.Column(db.Integer, nullable=True)
+
+    MAX_FAILED_LOGINS = 5
+    LOCKOUT_MINUTES = 15
+
+    def get_id(self):
+        if not self.session_token:
+            self.rotate_session_token()
+        return self.session_token
+
+    def rotate_session_token(self):
+        self.session_token = secrets.token_hex(32)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
+        self.rotate_session_token()
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    @property
+    def is_locked(self):
+        return bool(self.locked_until and self.locked_until > datetime.utcnow())
+
+    def register_failure(self):
+        self.failed_login_count = (self.failed_login_count or 0) + 1
+        if self.failed_login_count >= self.MAX_FAILED_LOGINS:
+            self.locked_until = datetime.utcnow() + timedelta(minutes=self.LOCKOUT_MINUTES)
+            self.failed_login_count = 0
+
+    def register_success(self):
+        self.failed_login_count = 0
+        self.locked_until = None
+        self.last_login_at = datetime.utcnow()
 
     @property
     def is_admin(self):
@@ -56,6 +90,7 @@ class CertificateHistory(db.Model):
     serial = db.Column(db.String(40), nullable=False)
     issued_at = db.Column(db.DateTime, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=True)
+    revoked_at = db.Column(db.DateTime, nullable=True)
     action = db.Column(db.String(20), nullable=False)
 
 

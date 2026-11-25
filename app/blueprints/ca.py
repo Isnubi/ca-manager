@@ -1,5 +1,4 @@
 import io
-import ipaddress
 import os
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, redirect, url_for, request, flash, send_file, abort, Response
@@ -7,22 +6,39 @@ from flask_login import login_required, current_user
 from app import db
 from app.models import Certificate, CertificateHistory, AuditLog, get_setting
 from app.blueprints.utils.ca_utils import (
-    CA_DIR, CA_CERT, CRL_FILE,
+    CA_CERT, CRL_FILE, InvalidNameError,
     ca_initialized, regen_crl, init_ca, issue_cert, cert_text,
-    parse_sans_from_cert_text, gen_pkcs12,
+    parse_sans_from_cert_text, gen_pkcs12, build_sans, validate_domain, san_entry,
+    cert_path,
 )
 from app.blueprints.utils.utils import admin_required, issue_required, log_action
 
 ca_bp = Blueprint('ca', __name__)
 
 
-def _san_entry(value):
-    """Return 'IP:value' if value is a valid IP address, else 'DNS:value'."""
+def _cert_or_404(domain):
+    """Return the Certificate row for domain; 404 for unknown or unsafe names.
+
+    File-serving routes only ever serve files of certificates known to the
+    database, never an arbitrary name inside CA_DIR (such as rootCA).
+    """
+    cert = Certificate.query.filter_by(domain=domain).first_or_404()
     try:
-        ipaddress.ip_address(value)
-        return f'IP:{value}'
-    except ValueError:
-        return f'DNS:{value}'
+        cert_path(cert.domain, 'crt')
+    except InvalidNameError:
+        abort(404)
+    return cert
+
+
+def _history_entry(cert, action):
+    return CertificateHistory(
+        domain=cert.domain,
+        serial=cert.serial,
+        issued_at=cert.issued_at,
+        expires_at=cert.expires_at,
+        revoked_at=cert.revoked_at if cert.status == 'revoked' else None,
+        action=action,
+    )
 
 
 @ca_bp.route('/')
@@ -100,12 +116,14 @@ def issue():
         return redirect(url_for('ca.dashboard'))
 
     if request.method == 'POST':
-        domain = request.form.get('domain', '').strip().lower()
         extra_raw = request.form.get('extra_sans', '').strip()
-        notes = request.form.get('notes', '').strip() or None
+        notes = request.form.get('notes', '').strip()[:500] or None
 
-        if not domain:
-            flash('Domain is required.', 'danger')
+        try:
+            domain = validate_domain(request.form.get('domain', ''))
+            sans = build_sans(domain, extra_raw.split(','))
+        except InvalidNameError as e:
+            flash(str(e), 'danger')
             return render_template('ca/issue.html', days=get_setting('DAYS_VALID_CERT'))
 
         existing = Certificate.query.filter_by(domain=domain).first()
@@ -114,14 +132,6 @@ def issue():
             return redirect(url_for('ca.cert_detail', domain=domain))
 
         try:
-            sans = [_san_entry(domain)]
-            for s in extra_raw.split(','):
-                s = s.strip()
-                if s:
-                    entry = _san_entry(s)
-                    if entry not in sans:
-                        sans.append(entry)
-
             days = int(get_setting('DAYS_VALID_CERT'))
             serial = issue_cert(
                 domain=domain,
@@ -136,14 +146,9 @@ def issue():
 
             now = datetime.utcnow()
             if existing:
-                # Save history of the revoked cert being replaced
-                db.session.add(CertificateHistory(
-                    domain=domain,
-                    serial=existing.serial,
-                    issued_at=existing.issued_at,
-                    expires_at=existing.expires_at,
-                    action='reissued',
-                ))
+                # Save history of the revoked cert being replaced; its serial
+                # stays on the CRL.
+                db.session.add(_history_entry(existing, 'reissued'))
                 existing.serial = serial
                 existing.status = 'valid'
                 existing.issued_at = now
@@ -167,10 +172,13 @@ def issue():
 
             log_action('cert_issue', target=domain, detail=','.join(sans))
             db.session.commit()
+            if existing:
+                regen_crl()
             flash(f'Certificate for {domain} issued successfully!', 'success')
             return redirect(url_for('ca.cert_detail', domain=domain))
 
         except Exception as e:
+            db.session.rollback()
             flash(f'Failed to issue certificate: {e}', 'danger')
 
     return render_template('ca/issue.html', days=get_setting('DAYS_VALID_CERT'))
@@ -188,11 +196,10 @@ def renew(domain):
             sans = cert.sans.split(',')
         else:
             ossl = cert_text(domain)
-            sans = parse_sans_from_cert_text(ossl) or [_san_entry(domain)]
+            sans = parse_sans_from_cert_text(ossl) or [san_entry(domain)]
 
         old_serial = cert.serial
-        old_issued_at = cert.issued_at
-        old_expires_at = cert.expires_at
+        history = _history_entry(cert, 'renewed')
         days = int(get_setting('DAYS_VALID_CERT'))
         serial = issue_cert(
             domain=domain,
@@ -205,13 +212,7 @@ def renew(domain):
             days_valid_cert=days,
         )
 
-        db.session.add(CertificateHistory(
-            domain=domain,
-            serial=old_serial,
-            issued_at=old_issued_at,
-            expires_at=old_expires_at,
-            action='renewed',
-        ))
+        db.session.add(history)
 
         now = datetime.utcnow()
         cert.serial = serial
@@ -224,7 +225,7 @@ def renew(domain):
 
         log_action('cert_renew', target=domain, detail=f'old serial {old_serial}')
         db.session.commit()
-        regen_crl(Certificate.query.all())
+        regen_crl()
         flash(f'Certificate for {domain} renewed successfully!', 'success')
 
     except Exception as e:
@@ -237,12 +238,13 @@ def renew(domain):
 @ca_bp.route('/cert/<domain>')
 @login_required
 def cert_detail(domain):
-    cert = Certificate.query.filter_by(domain=domain).first_or_404()
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
-    key_path = os.path.join(CA_DIR, f'{domain}.key')
+    cert = _cert_or_404(domain)
+    crt_path = cert_path(domain, 'crt')
+    key_path = cert_path(domain, 'key')
 
     cert_pem = open(crt_path).read() if os.path.exists(crt_path) else None
-    key_pem = open(key_path).read() if (current_user.is_admin and os.path.exists(key_path)) else None
+    # The private key is never embedded in the page; admins fetch it on demand.
+    has_key = current_user.is_admin and os.path.exists(key_path)
     ossl_text = cert_text(domain) if cert_pem else None
 
     # Resolve SANs for display
@@ -259,7 +261,7 @@ def cert_detail(domain):
     return render_template('ca/cert_detail.html',
                            cert=cert,
                            cert_pem=cert_pem,
-                           key_pem=key_pem,
+                           has_key=has_key,
                            cert_text=ossl_text,
                            sans_list=sans_list,
                            history=history,
@@ -269,7 +271,8 @@ def cert_detail(domain):
 @ca_bp.route('/cert/<domain>/download/cert')
 @login_required
 def download_cert(domain):
-    path = os.path.join(CA_DIR, f'{domain}.crt')
+    _cert_or_404(domain)
+    path = cert_path(domain, 'crt')
     if not os.path.exists(path):
         abort(404)
     return send_file(path, as_attachment=True, download_name=f'{domain}.crt')
@@ -278,7 +281,8 @@ def download_cert(domain):
 @ca_bp.route('/cert/<domain>/download/chain')
 @login_required
 def download_chain(domain):
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
+    _cert_or_404(domain)
+    crt_path = cert_path(domain, 'crt')
     if not os.path.exists(crt_path) or not os.path.exists(CA_CERT):
         abort(404)
     chain = open(crt_path).read() + open(CA_CERT).read()
@@ -293,7 +297,8 @@ def download_chain(domain):
 @login_required
 @admin_required
 def download_key(domain):
-    path = os.path.join(CA_DIR, f'{domain}.key')
+    _cert_or_404(domain)
+    path = cert_path(domain, 'key')
     if not os.path.exists(path):
         abort(404)
     return send_file(path, as_attachment=True, download_name=f'{domain}.key')
@@ -303,8 +308,9 @@ def download_key(domain):
 @login_required
 @admin_required
 def download_pkcs12(domain):
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
-    key_path = os.path.join(CA_DIR, f'{domain}.key')
+    _cert_or_404(domain)
+    crt_path = cert_path(domain, 'crt')
+    key_path = cert_path(domain, 'key')
     if not os.path.exists(crt_path) or not os.path.exists(key_path):
         abort(404)
     try:
@@ -330,7 +336,7 @@ def revoke(domain):
         cert.revoked_at = datetime.utcnow()
         log_action('cert_revoke', target=domain)
         db.session.commit()
-        regen_crl(Certificate.query.all())
+        regen_crl()
         flash(f'Certificate for {domain} revoked and CRL updated.', 'success')
     except Exception as e:
         db.session.rollback()
