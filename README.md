@@ -21,8 +21,15 @@ A self-hosted private Certificate Authority manager built with Flask. Issue, ren
 
 ```bash
 cp .env.example .env   # optionally set SECRET_KEY (see below)
+
+# Run the published image (ghcr.io/isnubi/ca-manager:latest)
 docker compose up -d
+
+# …or build the image from this checkout
+docker compose -f docker-compose.build.yml up -d --build
 ```
+
+Set `CA_MANAGER_IMAGE` to pin another tag, e.g. `CA_MANAGER_IMAGE=ghcr.io/isnubi/ca-manager:1.2.0 docker compose up -d`.
 
 Open [http://localhost:5000](http://localhost:5000) and create your admin account on first launch.
 
@@ -43,6 +50,27 @@ CA subject fields (Country, Org, etc.) are configurable in the Settings page aft
 - Domains and SANs must be plain hostnames (optionally `*.` wildcard) or IP addresses.
 - After 5 failed password or TOTP attempts an account is locked for 15 minutes.
 - Changing a password or TOTP setting signs the user out of every other session.
+
+## Development
+
+Run the test suite (requires `openssl` on the PATH):
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r app/requirements.txt -r requirements-dev.txt
+pytest --cov=app
+```
+
+Or in Docker, without installing anything locally:
+
+```bash
+docker run --rm -v "$PWD":/src -w /src python:3.12-slim \
+  sh -c "pip install -q -r app/requirements.txt -r requirements-dev.txt && pytest"
+```
+
+GitHub Actions runs the tests on every push and pull request (`.github/workflows/tests.yml`),
+and builds the Docker image on pull requests, pushes it to GHCR on `main` and version tags
+(`.github/workflows/docker-publish.yml`).
 
 ## Roles
 

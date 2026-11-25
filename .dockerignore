@@ -9,3 +9,13 @@ entrypoint.sh
 docker-compose.yml
 templates/
 requirements.txt
+docker-compose.build.yml
+compose.yml
+.github
+tests/
+requirements-dev.txt
+pytest.ini
+.pytest_cache
+.coverage
+coverage.xml
+CLAUDE-SECURITY-*
