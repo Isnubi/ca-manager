@@ -1,0 +1,19 @@
+# Builds the image from this checkout and runs it.
+#   docker compose -f docker-compose.build.yml up -d --build
+services:
+  ca-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ca-manager:local
+    ports:
+      - "5000:5000"
+    env_file: .env
+    volumes:
+      - ca_data:/opt/private-ca
+      - app_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  ca_data:
+  app_data:

@@ -1,6 +1,8 @@
+# Runs the published image. To build the image locally instead:
+#   docker compose -f docker-compose.build.yml up -d --build
 services:
   ca-manager:
-    build: .
+    image: ${CA_MANAGER_IMAGE:-ghcr.io/isnubi/ca-manager:latest}
     ports:
       - "5000:5000"
     env_file: .env
