@@ -45,8 +45,7 @@
           <strong>Step 2.</strong> Enter the 6-digit code shown in your app to confirm.
         </p>
 
-        <form method="post">
-          <input type="hidden" name="secret" value="{{ secret }}">
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <input type="text" name="code" class="form-control text-center"
                    inputmode="numeric" pattern="[0-9]{6}" maxlength="6"

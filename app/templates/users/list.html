@@ -62,7 +62,8 @@
             {% if user.totp_enabled %}
             <button type="button" class="btn btn-sm btn-outline-warning me-1" title="Disable TOTP"
                     data-bs-toggle="modal" data-bs-target="#totpDisableModal"
-                    data-userid="{{ user.id }}" data-username="{{ user.username }}">
+                    data-userid="{{ user.id }}" data-username="{{ user.username }}"
+                    data-totp-disable-url="{{ url_for('users.totp_disable', user_id=user.id) }}">
               <i class="bi bi-shield-x"></i>
             </button>
             {% else %}
@@ -74,7 +75,8 @@
             {% if user.id != current_user.id %}
             <button type="button" class="btn btn-sm btn-outline-danger" title="Delete user"
                     data-bs-toggle="modal" data-bs-target="#deleteModal"
-                    data-userid="{{ user.id }}" data-username="{{ user.username }}">
+                    data-userid="{{ user.id }}" data-username="{{ user.username }}"
+                    data-delete-url="{{ url_for('users.delete', user_id=user.id) }}">
               <i class="bi bi-trash"></i>
             </button>
             {% else %}
@@ -105,7 +107,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form id="deleteForm" method="post">
+        <form id="deleteForm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-danger">
             <i class="bi bi-trash me-1"></i>Delete
           </button>
@@ -131,7 +133,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form id="totpDisableForm" method="post">
+        <form id="totpDisableForm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-warning">
             <i class="bi bi-shield-x me-1"></i>Disable TOTP
           </button>
@@ -147,12 +149,12 @@
 document.getElementById('deleteModal').addEventListener('show.bs.modal', function(e) {
   const btn = e.relatedTarget;
   document.getElementById('deleteTarget').textContent = btn.dataset.username;
-  document.getElementById('deleteForm').action = '/users/' + btn.dataset.userid + '/delete';
+  document.getElementById('deleteForm').action = btn.dataset.deleteUrl;
 });
 document.getElementById('totpDisableModal').addEventListener('show.bs.modal', function(e) {
   const btn = e.relatedTarget;
   document.getElementById('totpDisableTarget').textContent = btn.dataset.username;
-  document.getElementById('totpDisableForm').action = '/users/' + btn.dataset.userid + '/totp/disable';
+  document.getElementById('totpDisableForm').action = btn.dataset.totpDisableUrl;
 });
 </script>
 {% endblock %}

@@ -8,3 +8,4 @@ click==8.1.8
 pyotp
 qrcode
 APScheduler>=3.10.0
+Flask-WTF==1.2.2

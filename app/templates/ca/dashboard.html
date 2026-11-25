@@ -153,14 +153,16 @@
             {% if current_user.can_issue and cert.status == 'valid' %}
             <button type="button" class="btn btn-sm btn-outline-secondary me-1" title="Renew"
                     data-bs-toggle="modal" data-bs-target="#renewModal"
-                    data-domain="{{ cert.domain }}">
+                    data-domain="{{ cert.domain }}"
+                    data-action="{{ url_for('ca.renew', domain=cert.domain) }}">
               <i class="bi bi-arrow-repeat"></i>
             </button>
             {% endif %}
             {% if current_user.is_admin and cert.status == 'valid' %}
             <button type="button" class="btn btn-sm btn-outline-danger" title="Revoke"
                     data-bs-toggle="modal" data-bs-target="#revokeModal"
-                    data-domain="{{ cert.domain }}">
+                    data-domain="{{ cert.domain }}"
+                    data-action="{{ url_for('ca.revoke', domain=cert.domain) }}">
               <i class="bi bi-x-octagon"></i>
             </button>
             {% endif %}
@@ -204,7 +206,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form id="renewForm" method="post">
+        <form id="renewForm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-primary">
             <i class="bi bi-arrow-repeat me-1"></i>Renew
           </button>
@@ -231,7 +233,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form id="revokeForm" method="post">
+        <form id="revokeForm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-danger">
             <i class="bi bi-x-octagon me-1"></i>Revoke
           </button>
@@ -248,13 +250,13 @@
 document.getElementById('renewModal')?.addEventListener('show.bs.modal', function(e) {
   const domain = e.relatedTarget.dataset.domain;
   document.getElementById('renewTarget').textContent = domain;
-  document.getElementById('renewForm').action = '/cert/' + domain + '/renew';
+  document.getElementById('renewForm').action = e.relatedTarget.dataset.action;
 });
 
 document.getElementById('revokeModal')?.addEventListener('show.bs.modal', function(e) {
   const domain = e.relatedTarget.dataset.domain;
   document.getElementById('revokeTarget').textContent = domain;
-  document.getElementById('revokeForm').action = '/cert/' + domain + '/revoke';
+  document.getElementById('revokeForm').action = e.relatedTarget.dataset.action;
 });
 
 function filterCerts() {

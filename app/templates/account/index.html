@@ -17,7 +17,7 @@
         <i class="bi bi-key me-1"></i>Change Password
       </div>
       <div class="card-body">
-        <form method="post" action="{{ url_for('account.change_password') }}">
+        <form method="post" action="{{ url_for('account.change_password') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="mb-3">
             <label class="form-label fw-semibold">Current Password <span class="text-danger">*</span></label>
             <input type="password" name="current_password" class="form-control" required
@@ -57,7 +57,9 @@
         <p class="text-muted small flex-grow-1">
           TOTP is active on your account. You need your authenticator app at each login.
         </p>
-        <form method="post" action="{{ url_for('account.totp_disable') }}">
+        <form method="post" action="{{ url_for('account.totp_disable') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="password" name="current_password" class="form-control mb-2"
+                 required autocomplete="current-password" placeholder="Current password">
           <button type="submit" class="btn btn-outline-warning">
             <i class="bi bi-shield-x me-1"></i>Disable TOTP
           </button>
@@ -130,7 +132,8 @@
           <td class="pe-3 text-end">
             <button type="button" class="btn btn-sm btn-outline-danger"
                     data-bs-toggle="modal" data-bs-target="#deleteKeyModal"
-                    data-keyid="{{ key.id }}" data-keyname="{{ key.name }}">
+                    data-keyid="{{ key.id }}" data-keyname="{{ key.name }}"
+                    data-delete-url="{{ url_for('account.delete_api_key', key_id=key.id) }}">
               <i class="bi bi-trash"></i>
             </button>
           </td>
@@ -152,7 +155,7 @@
         <h5 class="modal-title"><i class="bi bi-key text-primary me-2"></i>New API Key</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form method="post" action="{{ url_for('account.create_api_key') }}">
+      <form method="post" action="{{ url_for('account.create_api_key') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-body">
           <label class="form-label fw-semibold">Key Name <span class="text-danger">*</span></label>
           <input type="text" name="name" class="form-control" required placeholder="e.g. CI pipeline">
@@ -184,7 +187,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form id="deleteKeyForm" method="post">
+        <form id="deleteKeyForm" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-danger">
             <i class="bi bi-trash me-1"></i>Delete
           </button>
@@ -200,7 +203,7 @@
 document.getElementById('deleteKeyModal')?.addEventListener('show.bs.modal', function(e) {
   const btn = e.relatedTarget;
   document.getElementById('deleteKeyName').textContent = btn.dataset.keyname;
-  document.getElementById('deleteKeyForm').action = '/account/api-keys/' + btn.dataset.keyid + '/delete';
+  document.getElementById('deleteKeyForm').action = btn.dataset.deleteUrl;
 });
 </script>
 {% endblock %}

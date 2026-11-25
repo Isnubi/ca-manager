@@ -23,10 +23,10 @@
 
 {# Reset forms live outside the main form to avoid nesting #}
 {% for key in definitions %}
-<form id="reset-{{ key }}" method="post" action="{{ url_for('settings.reset', key=key) }}"></form>
+<form id="reset-{{ key }}" method="post" action="{{ url_for('settings.reset', key=key) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
 {% endfor %}
 
-<form method="post" id="settings-form">
+<form method="post" id="settings-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="card mb-4">
     <div class="card-header fw-semibold py-2">
       <i class="bi bi-person-badge me-1"></i>CA Subject Fields
@@ -137,7 +137,8 @@
           </label>
           <div class="input-group">
             <input type="password" name="SMTP_PASSWORD" class="form-control"
-                   value="{{ current_values['SMTP_PASSWORD'] }}" autocomplete="new-password">
+                   value="" autocomplete="new-password"
+                   placeholder="{{ '•••••••• (saved — leave blank to keep)' if smtp_password_set else '' }}">
             <button type="submit" form="reset-SMTP_PASSWORD" class="btn btn-outline-secondary" title="Reset to default">
               <i class="bi bi-arrow-counterclockwise"></i>
             </button>

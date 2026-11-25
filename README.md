@@ -20,7 +20,7 @@ A self-hosted private Certificate Authority manager built with Flask. Issue, ren
 ### Docker Compose
 
 ```bash
-cp .env.example .env   # edit SECRET_KEY at minimum
+cp .env.example .env   # optionally set SECRET_KEY (see below)
 docker compose up -d
 ```
 
@@ -30,11 +30,19 @@ Open [http://localhost:5000](http://localhost:5000) and create your admin accoun
 
 | Variable | Default | Description |
 |---|---|---|
-| `SECRET_KEY` | `dev-secret-please-change` | Flask session secret — **change this** |
+| `SECRET_KEY` | *(random, generated on first start)* | Session signing secret. If unset, shorter than 32 characters, or a published placeholder, a random key is generated and stored in `DATA_DIR/secret_key`. Generate one with `python -c "import secrets; print(secrets.token_hex(32))"`. |
+| `SESSION_COOKIE_SECURE` | `false` | Set to `true` when the app is served over HTTPS, so session cookies are never sent in clear text. |
 | `DATA_DIR` | `/app/data` | SQLite database location |
 | `CA_DIR` | `/opt/private-ca` | CA keys and certificate files |
 
 CA subject fields (Country, Org, etc.) are configurable in the Settings page after login.
+
+### Security notes
+
+- All forms are protected against CSRF; session cookies are `HttpOnly` and `SameSite=Lax`.
+- Domains and SANs must be plain hostnames (optionally `*.` wildcard) or IP addresses.
+- After 5 failed password or TOTP attempts an account is locked for 15 minutes.
+- Changing a password or TOTP setting signs the user out of every other session.
 
 ## Roles
 

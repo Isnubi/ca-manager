@@ -85,12 +85,24 @@ def send_expiry_digest():
 
 
 def send_test_email(overrides=None):
+    from app.models import get_setting
     overrides = overrides or {}
 
     smtp_host = _setting('SMTP_HOST', overrides)
     smtp_port = int(_setting('SMTP_PORT', overrides) or 587)
     smtp_user = _setting('SMTP_USER', overrides)
-    smtp_pass = _setting('SMTP_PASSWORD', overrides)
+    smtp_pass = overrides.get('SMTP_PASSWORD') or ''
+
+    # The stored password is only ever sent to the stored server. If the test
+    # targets another host or port, the password must be typed in the form.
+    saved_host = get_setting('SMTP_HOST')
+    saved_port = int(get_setting('SMTP_PORT') or 587)
+    if not smtp_pass:
+        if smtp_host == saved_host and smtp_port == saved_port:
+            smtp_pass = get_setting('SMTP_PASSWORD')
+        elif get_setting('SMTP_PASSWORD'):
+            return False, ('Re-enter the SMTP password to test a server other than '
+                           'the saved one: the stored password is never sent to a new host.')
     smtp_from = _setting('SMTP_FROM', overrides) or smtp_user or 'ca-manager@localhost'
     alert_email = _setting('ALERT_EMAIL', overrides)
     verify_ssl = _setting('SMTP_VERIFY_SSL', overrides) != 'false'

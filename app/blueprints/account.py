@@ -3,7 +3,7 @@ import pyotp
 import qrcode
 import qrcode.image.svg
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
-from flask_login import login_required, current_user
+from flask_login import login_required, current_user, login_user
 from app import db
 from app.models import ApiKey
 from app.blueprints.utils.utils import log_action
@@ -65,30 +65,55 @@ def change_password():
     elif new_pw != confirm_pw:
         flash('Passwords do not match.', 'danger')
     else:
+        # set_password rotates the session token: every other session of this
+        # user is logged out; keep the current one signed in.
         current_user.set_password(new_pw)
         log_action('user_password_change', target=current_user.username, detail='self')
         db.session.commit()
+        login_user(current_user, remember=True)
         flash('Password updated successfully.', 'success')
 
     return redirect(url_for('account.index'))
+
+
+PENDING_TOTP_KEY = '_totp_pending_self'
+
+
+def render_totp_qr(secret, username):
+    uri = pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name='CA Manager')
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    qr_svg = buf.getvalue().decode('utf-8')
+    if '<?xml' in qr_svg:
+        qr_svg = qr_svg[qr_svg.index('<svg'):]
+    return uri, qr_svg
 
 
 @account_bp.route('/totp/setup', methods=['GET', 'POST'])
 @login_required
 def totp_setup():
     error = None
-    secret = None
+    # The secret being enrolled lives in the signed session, never in the form,
+    # so a forged request cannot choose it.
+    secret = session.get(PENDING_TOTP_KEY)
 
     if request.method == 'POST':
-        secret = request.form.get('secret', '').strip()
         code = request.form.get('code', '').strip()
         if not secret:
-            error = 'Missing secret. Please reload and try again.'
+            error = 'The enrollment expired. Please scan the new QR code and retry.'
+        elif current_user.totp_enabled and not current_user.check_password(
+                request.form.get('current_password', '')):
+            error = 'Current password is incorrect.'
         elif pyotp.TOTP(secret).verify(code, valid_window=1):
+            session.pop(PENDING_TOTP_KEY, None)
             current_user.totp_secret = secret
             current_user.totp_enabled = True
+            current_user.totp_last_step = None
+            current_user.rotate_session_token()
             log_action('totp_enable', target=current_user.username, detail='self')
             db.session.commit()
+            login_user(current_user, remember=True)
             flash('Two-factor authentication enabled.', 'success')
             return redirect(url_for('account.index'))
         else:
@@ -96,27 +121,26 @@ def totp_setup():
 
     if not secret:
         secret = pyotp.random_base32()
+        session[PENDING_TOTP_KEY] = secret
 
-    uri = pyotp.TOTP(secret).provisioning_uri(
-        name=current_user.username, issuer_name='CA Manager'
-    )
-    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
-    buf = io.BytesIO()
-    img.save(buf)
-    qr_svg = buf.getvalue().decode('utf-8')
-    if '<?xml' in qr_svg:
-        qr_svg = qr_svg[qr_svg.index('<svg'):]
-
+    uri, qr_svg = render_totp_qr(secret, current_user.username)
     return render_template('account/totp_setup.html',
-                           secret=secret, uri=uri, qr_svg=qr_svg, error=error)
+                           secret=secret, uri=uri, qr_svg=qr_svg, error=error,
+                           require_password=current_user.totp_enabled)
 
 
 @account_bp.route('/totp/disable', methods=['POST'])
 @login_required
 def totp_disable():
+    if not current_user.check_password(request.form.get('current_password', '')):
+        flash('Current password is incorrect.', 'danger')
+        return redirect(url_for('account.index'))
     current_user.totp_secret = None
     current_user.totp_enabled = False
+    current_user.totp_last_step = None
+    current_user.rotate_session_token()
     log_action('totp_disable', target=current_user.username, detail='self')
     db.session.commit()
+    login_user(current_user, remember=True)
     flash('Two-factor authentication disabled.', 'success')
     return redirect(url_for('account.index'))

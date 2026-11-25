@@ -1,4 +1,6 @@
+import ipaddress
 import os
+import re
 import subprocess
 import tempfile
 
@@ -8,6 +10,85 @@ CA_CERT = os.path.join(CA_DIR, 'rootCA.pem')
 CRL_FILE = os.path.join(CA_DIR, 'rootCA.crl')
 INDEX_FILE = os.path.join(CA_DIR, 'index.txt')
 SERIAL_FILE = os.path.join(CA_DIR, 'serial')
+
+
+# Hostname: dot-separated labels of letters, digits and inner hyphens,
+# optionally prefixed by a single "*." wildcard label.
+_LABEL = r'(?!-)[a-z0-9-]{1,63}(?<!-)'
+_HOSTNAME_RE = re.compile(rf'^(\*\.)?{_LABEL}(\.{_LABEL})*$')
+RESERVED_NAMES = {'rootca', 'index', 'serial', 'crlnumber'}
+
+
+class InvalidNameError(ValueError):
+    """Raised when a domain or SAN is not a plain hostname or IP address."""
+
+
+def _is_ip(value):
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def validate_domain(value):
+    """Return the normalized domain, or raise InvalidNameError.
+
+    Only hostnames (optionally with a leading wildcard) and IP addresses are
+    accepted. The value is used in file names, in the OpenSSL subject and
+    extension file and in index.txt, so anything else is refused.
+    """
+    if not isinstance(value, str):
+        raise InvalidNameError('Domain must be a string.')
+    domain = value.strip().lower()
+    if not domain:
+        raise InvalidNameError('Domain is required.')
+    if len(domain) > 253:
+        raise InvalidNameError('Domain is too long.')
+    if not (_is_ip(domain) or _HOSTNAME_RE.match(domain)):
+        raise InvalidNameError(f'Invalid domain name: {value!r}')
+    if domain.split('.')[0] in RESERVED_NAMES:
+        raise InvalidNameError(f'Reserved name: {value!r}')
+    return domain
+
+
+def san_entry(value):
+    """Validate one SAN value and return it as 'IP:x' or 'DNS:x'."""
+    value = validate_domain(value)
+    return f'IP:{value}' if _is_ip(value) else f'DNS:{value}'
+
+
+def validate_san_entry(entry):
+    """Validate an already-prefixed SAN ('DNS:x' / 'IP:x') and return it."""
+    kind, sep, value = str(entry).strip().partition(':')
+    if not sep or kind not in ('DNS', 'IP'):
+        raise InvalidNameError(f'Invalid SAN entry: {entry!r}')
+    if kind == 'IP':
+        if not _is_ip(value):
+            raise InvalidNameError(f'Invalid IP SAN: {entry!r}')
+        return f'IP:{value}'
+    return f'DNS:{validate_domain(value)}'
+
+
+def build_sans(domain, extra):
+    """Build the SAN list for a certificate from its domain and extra names."""
+    sans = [san_entry(domain)]
+    for s in extra:
+        s = str(s).strip()
+        if s:
+            entry = san_entry(s)
+            if entry not in sans:
+                sans.append(entry)
+    return sans
+
+
+def cert_path(domain, ext):
+    """Return CA_DIR/<domain>.<ext>, refusing any path that leaves CA_DIR."""
+    base = os.path.realpath(CA_DIR)
+    path = os.path.realpath(os.path.join(base, f'{domain}.{ext}'))
+    if os.path.dirname(path) != base or os.path.basename(path).lower().startswith('rootca.'):
+        raise InvalidNameError(f'Invalid certificate name: {domain!r}')
+    return path
 
 
 def ca_initialized():
@@ -26,8 +107,12 @@ def _openssl_conf():
     )
 
 
-def _sync_index_txt(certificates):
-    """Rebuild index.txt from certificate records for CRL generation."""
+def _sync_index_txt(certificates, revoked_history=()):
+    """Rebuild index.txt from certificate records for CRL generation.
+
+    ``revoked_history`` holds earlier, revoked serials of certificates that
+    have since been renewed or reissued; they must stay on the CRL.
+    """
     from app.models import get_setting
     c = get_setting('CA_COUNTRY')
     st = get_setting('CA_STATE')
@@ -35,13 +120,30 @@ def _sync_index_txt(certificates):
     o = get_setting('CA_ORG')
     ou = get_setting('CA_OU')
 
+    def _clean(value):
+        # index.txt is tab/newline delimited: never let a field break it.
+        return re.sub(r'[\x00-\x1f\x7f]', '', str(value))
+
     lines = []
+    seen = set()
+
+    def _add(revoked, expires_at, revoked_at, serial, domain):
+        if serial in seen:
+            return
+        seen.add(serial)
+        flag = 'R' if revoked else 'V'
+        expiry = expires_at.strftime('%y%m%d%H%M%SZ') if expires_at else '991231235959Z'
+        rev = revoked_at.strftime('%y%m%d%H%M%SZ') if (revoked and revoked_at) else ''
+        if revoked and not rev:
+            rev = expiry
+        subj = _clean(f"/C={c}/ST={st}/L={loc}/O={o}/OU={ou}/CN={domain}")
+        lines.append(f"{flag}\t{expiry}\t{rev}\t{_clean(serial)}\tunknown\t{subj}")
+
+    # Revoked serials first, so a serial appearing twice is kept as revoked.
+    for h in revoked_history:
+        _add(True, h.expires_at, h.revoked_at, h.serial, h.domain)
     for cert in certificates:
-        flag = 'V' if cert.status == 'valid' else 'R'
-        expiry = cert.expires_at.strftime('%y%m%d%H%M%SZ') if cert.expires_at else '991231235959Z'
-        rev = cert.revoked_at.strftime('%y%m%d%H%M%SZ') if (cert.status == 'revoked' and cert.revoked_at) else ''
-        subj = f"/C={c}/ST={st}/L={loc}/O={o}/OU={ou}/CN={cert.domain}"
-        lines.append(f"{flag}\t{expiry}\t{rev}\t{cert.serial}\tunknown\t{subj}")
+        _add(cert.status != 'valid', cert.expires_at, cert.revoked_at, cert.serial, cert.domain)
 
     with open(INDEX_FILE, 'w') as f:
         f.write('\n'.join(lines))
@@ -49,8 +151,20 @@ def _sync_index_txt(certificates):
             f.write('\n')
 
 
-def regen_crl(certificates):
-    _sync_index_txt(certificates)
+def regen_crl(certificates=None, revoked_history=None):
+    """Regenerate the CRL.
+
+    Called with no arguments it reads every certificate and every revoked
+    history entry from the database (requires an app context).
+    """
+    if certificates is None or revoked_history is None:
+        from app.models import Certificate, CertificateHistory
+        if certificates is None:
+            certificates = Certificate.query.all()
+        if revoked_history is None:
+            revoked_history = CertificateHistory.query.filter(
+                CertificateHistory.revoked_at.isnot(None)).all()
+    _sync_index_txt(certificates, revoked_history)
     with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as cf:
         cf.write(_openssl_conf())
         conf_path = cf.name
@@ -86,14 +200,16 @@ def init_ca(subj_c, subj_st, subj_l, subj_o, days_valid_root):
     if r.returncode != 0:
         raise RuntimeError(r.stderr)
 
-    regen_crl([])
+    regen_crl([], [])
 
 
 def issue_cert(domain, sans, subj_c, subj_st, subj_l, subj_o, subj_ou, days_valid_cert):
-    key_path = os.path.join(CA_DIR, f'{domain}.key')
-    csr_path = os.path.join(CA_DIR, f'{domain}.csr')
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
-    ext_path = os.path.join(CA_DIR, f'{domain}.ext')
+    domain = validate_domain(domain)
+    sans = [validate_san_entry(s) for s in sans]
+    key_path = cert_path(domain, 'key')
+    csr_path = cert_path(domain, 'csr')
+    crt_path = cert_path(domain, 'crt')
+    ext_path = cert_path(domain, 'ext')
 
     subj = f"/C={subj_c}/ST={subj_st}/L={subj_l}/O={subj_o}/OU={subj_ou}/CN={domain}"
     with open(ext_path, 'w') as f:
@@ -123,7 +239,7 @@ def issue_cert(domain, sans, subj_c, subj_st, subj_l, subj_o, subj_ou, days_vali
 
 
 def cert_text(domain):
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
+    crt_path = cert_path(domain, 'crt')
     r = subprocess.run(
         ['openssl', 'x509', '-in', crt_path, '-noout', '-text'],
         capture_output=True, text=True,
@@ -153,8 +269,8 @@ def parse_sans_from_cert_text(text):
 
 def gen_pkcs12(domain):
     """Generate PKCS#12 bundle (no password) and return bytes."""
-    crt_path = os.path.join(CA_DIR, f'{domain}.crt')
-    key_path = os.path.join(CA_DIR, f'{domain}.key')
+    crt_path = cert_path(domain, 'crt')
+    key_path = cert_path(domain, 'key')
     with tempfile.NamedTemporaryFile(suffix='.p12', delete=False) as f:
         p12_path = f.name
     try:

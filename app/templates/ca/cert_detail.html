@@ -26,7 +26,7 @@
       <i class="bi bi-layers me-1"></i>Full chain
     </a>
     {% endif %}
-    {% if current_user.is_admin and key_pem %}
+    {% if current_user.is_admin and has_key %}
     <a href="{{ url_for('ca.download_key', domain=cert.domain) }}"
        class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-download me-1"></i>Download .key
@@ -166,7 +166,7 @@
 {% endif %}
 
 <!-- Private Key (admin only) -->
-{% if current_user.is_admin and key_pem %}
+{% if current_user.is_admin and has_key %}
 <div class="card mb-3 border-warning">
   <div class="card-header d-flex justify-content-between align-items-center py-2 bg-warning bg-opacity-10">
     <span class="fw-semibold small">
@@ -186,7 +186,8 @@
   </div>
   <div id="keyBlock" style="display:none">
     <div class="card-body p-0">
-      <pre class="pem-block rounded-0 rounded-bottom" id="keyPem">{{ key_pem }}</pre>
+      <pre class="pem-block rounded-0 rounded-bottom" id="keyPem"
+           data-src="{{ url_for('ca.download_key', domain=cert.domain) }}"></pre>
     </div>
   </div>
 </div>
@@ -269,7 +270,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form method="post" action="{{ url_for('ca.renew', domain=cert.domain) }}">
+        <form method="post" action="{{ url_for('ca.renew', domain=cert.domain) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-primary">
             <i class="bi bi-arrow-repeat me-1"></i>Renew
           </button>
@@ -297,7 +298,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form method="post" action="{{ url_for('ca.revoke', domain=cert.domain) }}">
+        <form method="post" action="{{ url_for('ca.revoke', domain=cert.domain) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-danger">
             <i class="bi bi-x-octagon me-1"></i>Revoke
           </button>
@@ -311,10 +312,17 @@
 
 {% block scripts %}
 <script>
-function toggleKey(btn) {
+async function toggleKey(btn) {
   const block = document.getElementById('keyBlock');
   const copyBtn = document.getElementById('keyCopyBtn');
+  const pem = document.getElementById('keyPem');
   const visible = block.style.display !== 'none';
+  if (!visible && !pem.textContent) {
+    // The key is fetched only when asked for, and never cached.
+    const resp = await fetch(pem.dataset.src, {cache: 'no-store', credentials: 'same-origin'});
+    if (!resp.ok) { pem.textContent = 'Could not load the private key.'; }
+    else { pem.textContent = await resp.text(); }
+  }
   block.style.display = visible ? 'none' : '';
   copyBtn.style.display = visible ? 'none' : '';
   btn.innerHTML = visible
